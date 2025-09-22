@@ -3,59 +3,67 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from solver import generate_roster  # Make sure solver.py is in the same folder
-from st_aggrid import AgGrid, GridOptionsBuilder
+import calendar
 
-st.set_page_config(page_title="Doctor Rostering App", layout="wide")
-st.title("🩺 Simple Doctor Rostering App")
+# Define all shifts
+WEEKDAY_SHIFTS = [
+    ("07:00–18:00", 1, 2),
+    ("08:30–18:00", 1, 2),
+    ("09:00–20:00", 1, 1),
+    ("11:00–22:00", 1, 2),
+    ("14:00–01:00", 3, 4),
+    ("22:00–09:00", 3, 3),
+]
+
+WEEKEND_SHIFTS = [
+    ("07:00–19:00", 2, 2),
+    ("09:00–21:00", 1, 1),
+    ("11:00–23:00", 1, 1),
+    ("13:00–01:00", 2, 2),
+    ("21:00–09:00", 3, 3),
+]
+
+def generate_shift_table(year, month):
+    days_in_month = calendar.monthrange(year, month)[1]
+    data = []
+
+    for day in range(1, days_in_month + 1):
+        date_obj = datetime.date(year, month, day)
+        weekday = date_obj.weekday()
+        is_weekend = weekday >= 5  # 5 = Saturday, 6 = Sunday
+
+        shift_list = WEEKEND_SHIFTS if is_weekend else WEEKDAY_SHIFTS
+
+        for time, min_docs, max_docs in shift_list:
+            data.append({
+                "Date": date_obj.strftime("%Y-%m-%d"),
+                "Day": date_obj.strftime("%A"),
+                "Shift Time": time,
+                "Min Doctors": min_docs,
+                "Max Doctors": max_docs,
+                "Assigned Doctor(s)": ""  # Placeholder for now
+            })
+
+    return pd.DataFrame(data)
+
+# ---------- Streamlit UI ----------
+st.set_page_config(page_title="Doctor Shift Viewer", layout="wide")
+st.title("📅 Monthly Shift Schedule")
 
 # Sidebar inputs
-st.sidebar.header("Setup")
-num_doctors = st.sidebar.number_input("Number of Doctors", min_value=1, max_value=50, value=5)
-
+st.sidebar.header("Roster Setup")
 year = st.sidebar.number_input("Year", min_value=2024, max_value=2030, value=datetime.date.today().year)
 month = st.sidebar.number_input("Month", min_value=1, max_value=12, value=datetime.date.today().month)
 
-if st.sidebar.button("Generate Roster"):
-    doctors = [f"Doctor {i+1}" for i in range(num_doctors)]
+if st.sidebar.button("Generate Shift Table"):
+    shift_df = generate_shift_table(year, month)
 
-    try:
-        df, diagnostics, doctor_counts = generate_roster(doctors, year, month)
+    st.subheader(f"Shift Schedule for {year}-{month:02d}")
+    st.dataframe(shift_df, use_container_width=True)
 
-        st.subheader(f"📅 Roster for {year}-{month:02d}")
-
-        if "Error" in df.columns:
-            st.error(df["Error"].iloc[0])
-        else:
-            # Use AgGrid for better display
-            gb = GridOptionsBuilder.from_dataframe(df)
-            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True)
-            gb.configure_grid_options(domLayout='normal')
-            grid_options = gb.build()
-
-            AgGrid(
-                df,
-                gridOptions=grid_options,
-                height=600,
-                fit_columns_on_grid_load=True,
-                enable_enterprise_modules=False
-            )
-
-            st.subheader("👨‍⚕️ Doctor Shift Totals")
-            summary_df = pd.DataFrame(list(doctor_counts.items()), columns=["Doctor", "Total Shifts"])
-            st.dataframe(summary_df, use_container_width=True)
-
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download CSV", csv, "roster.csv", "text/csv")
-
-        st.subheader("📊 Diagnostics")
-        st.json(diagnostics)
-
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
+    csv = shift_df.to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Download as CSV", csv, "shift_schedule.csv", "text/csv")
 
 else:
-    st.info("👈 Set parameters and click Generate Roster")
-
-
+    st.info("👈 Select year and month, then click 'Generate Shift Table'.")
 
