@@ -66,6 +66,9 @@ def generate_roster(doctors, year, month):
         df = pd.DataFrame(data)
         return df, diagnostics, doctor_counts
     else:
-        return pd.DataFrame({"Error": ["No solution found"]}), diagnostics, {}
+        # ✅ Always return three values
+        return pd.DataFrame({"Error": ["No solution found"]}), diagnostics, {name: 0 for name in doctors}
+
+
 
 
