@@ -7,6 +7,21 @@ def generate_roster(doctors, year, month):
     days_in_month = calendar.monthrange(year, month)[1]
     shifts = ["Day", "Night"]
 
+    # --- Diagnostics setup ---
+    diagnostics = {
+        "days_in_month": days_in_month,
+        "total_shifts_required": days_in_month * len(shifts),
+        "total_doctors": len(doctors),
+        "status": "NOT_STARTED",
+    }
+    doctor_counts = {name: 0 for name in doctors}
+
+    # --- Edge case: no doctors ---
+    if not doctors:
+        diagnostics["status"] = "NO_DOCTORS"
+        df = pd.DataFrame({"Error": ["No doctors available"]})
+        return df, diagnostics, doctor_counts
+
     model = cp_model.CpModel()
 
     # Decision variables
@@ -43,17 +58,10 @@ def generate_roster(doctors, year, month):
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 10
     status = solver.Solve(model)
-
-    diagnostics = {
-        "days_in_month": days_in_month,
-        "total_shifts_required": days_in_month * len(shifts),
-        "total_doctors": len(doctors),
-        "status": solver.StatusName(status),
-    }
+    diagnostics["status"] = solver.StatusName(status)
 
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         data = []
-        doctor_counts = {name: 0 for name in doctors}
         for day in range(days_in_month):
             row = {"Day": day+1}
             for s, shift in enumerate(shifts):
@@ -64,10 +72,11 @@ def generate_roster(doctors, year, month):
             data.append(row)
 
         df = pd.DataFrame(data)
-        return df, diagnostics, doctor_counts
     else:
-        # ✅ Always return three values
-        return pd.DataFrame({"Error": ["No solution found"]}), diagnostics, {name: 0 for name in doctors}
+        df = pd.DataFrame({"Error": ["No solution found"]})
+
+    # ✅ Always return 3 items
+    return df, diagnostics, doctor_counts
 
 
 
