@@ -1,23 +1,5 @@
 # solver.py - starter file
 # solver.py
-import pandas as pd
-import calendar
-from datetime import datetime, timedelta
-
-def parse_shift_time(shift_str):
-    start_str, end_str = shift_str.split("–")
-    start_time = datetime.strptime(start_str, "%H:%M").time()
-    end_time = datetime.strptime(end_str, "%H:%M").time()
-    return start_time, end_time
-
-def calculate_shift_end_datetime(date, start, end):
-    start_dt = datetime.combine(date, start)
-    end_dt = datetime.combine(date, end)
-    # Handle overnight shift
-    if end <= start:
-        end_dt += timedelta(days=1)
-    return end_dt
-
 def generate_roster(doctors, year, month):
     shift_definitions = [
         {"Shift": "07:00–18:00", "Type": "Day", "Min Doctors": 1, "Max Doctors": 2},
@@ -32,6 +14,8 @@ def generate_roster(doctors, year, month):
     schedule = []
     doctor_index = 0
     last_shift_end = {doc: None for doc in doctors}
+    consecutive_nights = {doc: 0 for doc in doctors}
+    last_shift_type = {doc: None for doc in doctors}
 
     for day in range(1, num_days + 1):
         date = datetime(year, month, day)
@@ -52,6 +36,7 @@ def generate_roster(doctors, year, month):
             needed = shift["Min Doctors"]
             start_time, end_time = parse_shift_time(shift["Shift"])
             shift_end_dt = calculate_shift_end_datetime(date, start_time, end_time)
+            shift_type = shift["Type"]
 
             tries = 0
             max_tries = len(doctors) * 2
@@ -64,16 +49,33 @@ def generate_roster(doctors, year, month):
                 if candidate in assigned_today:
                     continue
 
-                # Check 18-hour rest rule
+                # 1️⃣ Rule: 18-hour rest period
                 last_end = last_shift_end.get(candidate)
                 if last_end:
                     time_since_last = (datetime.combine(date, start_time) - last_end).total_seconds() / 3600
                     if time_since_last < 18:
                         continue
 
+                # 2️⃣ Rule: Max 3 consecutive night shifts
+                if shift_type == "Night":
+                    if last_shift_type.get(candidate) == "Night" and consecutive_nights[candidate] >= 3:
+                        continue
+
+                # Passed all rules
                 assigned.append(candidate)
                 assigned_today.add(candidate)
                 last_shift_end[candidate] = shift_end_dt
+
+                # Update shift type and night count
+                if shift_type == "Night":
+                    if last_shift_type.get(candidate) == "Night":
+                        consecutive_nights[candidate] += 1
+                    else:
+                        consecutive_nights[candidate] = 1
+                else:
+                    consecutive_nights[candidate] = 0
+
+                last_shift_type[candidate] = shift_type
 
             row["Assigned Doctors"] = ", ".join(assigned)
             schedule.append(row)
@@ -87,7 +89,6 @@ def generate_roster(doctors, year, month):
     }
 
     return df, diagnostics, doctor_counts
-
 
 
 
