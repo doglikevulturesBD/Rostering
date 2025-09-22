@@ -2,6 +2,11 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import sys, os
+
+# ✅ Ensure core/ is in Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from core.solver import generate_roster
 
 st.set_page_config(page_title="Doctor Rostering App", layout="wide")
@@ -36,3 +41,5 @@ if st.sidebar.button("Generate Roster"):
         st.download_button("Download CSV", csv, "roster.csv", "text/csv")
 else:
     st.info("👈 Select doctors, year, and month, then click Generate Roster.")
+
+
