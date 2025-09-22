@@ -7,7 +7,7 @@ def generate_roster(doctors, year, month):
     days_in_month = calendar.monthrange(year, month)[1]
     shifts = ["Day", "Night"]
 
-    # --- Diagnostics setup ---
+    # Defaults
     diagnostics = {
         "days_in_month": days_in_month,
         "total_shifts_required": days_in_month * len(shifts),
@@ -15,68 +15,63 @@ def generate_roster(doctors, year, month):
         "status": "NOT_STARTED",
     }
     doctor_counts = {name: 0 for name in doctors}
+    df = pd.DataFrame({"Info": ["Solver not started"]})
 
     # --- Edge case: no doctors ---
     if not doctors:
         diagnostics["status"] = "NO_DOCTORS"
-        df = pd.DataFrame({"Error": ["No doctors available"]})
-        return df, diagnostics, doctor_counts
+        return pd.DataFrame({"Error": ["No doctors available"]}), diagnostics, doctor_counts
 
-    model = cp_model.CpModel()
+    try:
+        # Build model
+        model = cp_model.CpModel()
+        x = {}
+        for d in range(len(doctors)):
+            for day in range(days_in_month):
+                for s in range(len(shifts)):
+                    x[d, day, s] = model.NewBoolVar(f"x_{d}_{day}_{s}")
 
-    # Decision variables
-    x = {}
-    for d in range(len(doctors)):
+        # Rule 1: At most 1 shift per doctor per day
+        for d in range(len(doctors)):
+            for day in range(days_in_month):
+                model.Add(sum(x[d, day, s] for s in range(len(shifts))) <= 1)
+
+        # Rule 2: At most 1 doctor per shift (✅ allows empty shifts)
         for day in range(days_in_month):
             for s in range(len(shifts)):
-                x[d, day, s] = model.NewBoolVar(f"x_{d}_{day}_{s}")
+                model.Add(sum(x[d, day, s] for d in range(len(doctors))) <= 1)
 
-    # Rule 1: At most 1 shift per doctor per day
-    for d in range(len(doctors)):
-        for day in range(days_in_month):
-            model.Add(sum(x[d, day, s] for s in range(len(shifts))) <= 1)
+        # --- No fairness / no balancing yet ---
+        # Just "find any feasible solution"
+        model.Minimize(0)
 
-    # Rule 2: Each shift can have at most 1 doctor (relaxed)
-    for day in range(days_in_month):
-        for s in range(len(shifts)):
-            model.Add(sum(x[d, day, s] for d in range(len(doctors))) <= 1)
+        # Solve
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = 5
+        status = solver.Solve(model)
+        diagnostics["status"] = solver.StatusName(status)
 
-    # Objective: balance workload
-    total_shifts = [sum(x[d, day, s] for day in range(days_in_month) for s in range(len(shifts))) for d in range(len(doctors))]
-    avg = sum(total_shifts) // len(doctors) if doctors else 0
-    diffs = []
-    for d in range(len(doctors)):
-        diff = model.NewIntVar(-days_in_month, days_in_month, f"diff_{d}")
-        model.Add(diff == total_shifts[d] - avg)
-        absdiff = model.NewIntVar(0, days_in_month, f"absdiff_{d}")
-        model.AddAbsEquality(absdiff, diff)
-        diffs.append(absdiff)
+        if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+            data = []
+            doctor_counts = {name: 0 for name in doctors}
+            for day in range(days_in_month):
+                row = {"Day": day+1}
+                for s, shift in enumerate(shifts):
+                    for d, name in enumerate(doctors):
+                        if solver.Value(x[d, day, s]) == 1:
+                            row[shift] = name
+                            doctor_counts[name] += 1
+                data.append(row)
+            df = pd.DataFrame(data)
+        else:
+            df = pd.DataFrame({"Error": ["No solution found"]})
 
-    model.Minimize(sum(diffs))
+        return df, diagnostics, doctor_counts
 
-    # Solve
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 10
-    status = solver.Solve(model)
-    diagnostics["status"] = solver.StatusName(status)
+    except Exception as e:
+        diagnostics["status"] = f"EXCEPTION: {str(e)}"
+        return pd.DataFrame({"Error": [str(e)]}), diagnostics, doctor_counts
 
-    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        data = []
-        for day in range(days_in_month):
-            row = {"Day": day+1}
-            for s, shift in enumerate(shifts):
-                for d, name in enumerate(doctors):
-                    if solver.Value(x[d, day, s]) == 1:
-                        row[shift] = name
-                        doctor_counts[name] += 1
-            data.append(row)
-
-        df = pd.DataFrame(data)
-    else:
-        df = pd.DataFrame({"Error": ["No solution found"]})
-
-    # ✅ Always return 3 items
-    return df, diagnostics, doctor_counts
 
 
 
