@@ -3,11 +3,11 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from solver import generate_roster
+from solver import generate_roster  # Make sure solver.py is in the same folder
+from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.set_page_config(page_title="Doctor Rostering App", layout="wide")
-
-st.title("🩺 Doctor Rostering App")
+st.title("🩺 Simple Doctor Rostering App")
 
 # Sidebar inputs
 st.sidebar.header("Setup")
@@ -22,28 +22,40 @@ if st.sidebar.button("Generate Roster"):
     try:
         df, diagnostics, doctor_counts = generate_roster(doctors, year, month)
 
-        with st.expander("📊 Diagnostics", expanded=True):
-            st.json(diagnostics, expanded=False)
-
         st.subheader(f"📅 Roster for {year}-{month:02d}")
-        st.dataframe(df.style.set_properties(**{
-            'text-align': 'center',
-            'white-space': 'nowrap'
-        }), use_container_width=True)
 
-        st.subheader("👨‍⚕️ Doctor Shift Totals")
-        summary_df = pd.DataFrame(list(doctor_counts.items()), columns=["Doctor", "Total Shifts"])
-        st.dataframe(summary_df.style.set_properties(**{
-            'text-align': 'center'
-        }), use_container_width=True)
+        if "Error" in df.columns:
+            st.error(df["Error"].iloc[0])
+        else:
+            # Use AgGrid for better display
+            gb = GridOptionsBuilder.from_dataframe(df)
+            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True)
+            gb.configure_grid_options(domLayout='normal')
+            grid_options = gb.build()
 
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, "roster.csv", "text/csv")
+            AgGrid(
+                df,
+                gridOptions=grid_options,
+                height=600,
+                fit_columns_on_grid_load=True,
+                enable_enterprise_modules=False
+            )
+
+            st.subheader("👨‍⚕️ Doctor Shift Totals")
+            summary_df = pd.DataFrame(list(doctor_counts.items()), columns=["Doctor", "Total Shifts"])
+            st.dataframe(summary_df, use_container_width=True)
+
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download CSV", csv, "roster.csv", "text/csv")
+
+        st.subheader("📊 Diagnostics")
+        st.json(diagnostics)
 
     except Exception as e:
-        st.error(f"❌ Error running solver: {e}")
+        st.error(f"❌ Error: {e}")
+
 else:
-    st.info("👈 Use the sidebar to set values and generate a roster.")
+    st.info("👈 Set parameters and click Generate Roster")
 
 
 
