@@ -4,7 +4,6 @@ import pandas as pd
 import calendar
 
 def generate_roster(doctors, year, month):
-    print("🚀 START: generate_roster called")  # Debug step
     days_in_month = calendar.monthrange(year, month)[1]
     shifts = ["Day", "Night"]
 
@@ -16,16 +15,18 @@ def generate_roster(doctors, year, month):
         "total_shifts_required": days_in_month * len(shifts),
         "total_doctors": len(doctors),
         "status": "NOT_STARTED",
+        "notes": [],
     }
 
+    # 💥 No doctors provided
     if not doctors:
-        print("❌ No doctors found")
         diagnostics["status"] = "NO_DOCTORS"
+        diagnostics["notes"].append("No doctors available.")
         df = pd.DataFrame({"Error": ["No doctors available"]})
         return df, diagnostics, doctor_counts
 
     try:
-        print("🧠 Building solver model...")
+        # 🧠 Build model
         model = cp_model.CpModel()
         x = {}
         for d in range(len(doctors)):
@@ -43,16 +44,15 @@ def generate_roster(doctors, year, month):
             for s in range(len(shifts)):
                 model.Add(sum(x[d, day, s] for d in range(len(doctors))) <= 1)
 
-        print("🎯 Solving model...")
+        # 🎯 Solve
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = 10
         status = solver.Solve(model)
         diagnostics["status"] = solver.StatusName(status)
-        print(f"📊 Solver finished with status: {diagnostics['status']}")
 
         if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-            print("✅ Feasible solution found")
             rows = []
+            doctor_counts = {name: 0 for name in doctors}
             for day in range(days_in_month):
                 row = {"Day": day + 1}
                 for s, shift in enumerate(shifts):
@@ -63,17 +63,15 @@ def generate_roster(doctors, year, month):
                 rows.append(row)
             df = pd.DataFrame(rows)
         else:
-            print("❌ No feasible solution")
+            diagnostics["notes"].append("No feasible solution.")
             df = pd.DataFrame({"Error": ["No solution found"]})
 
     except Exception as e:
-        diagnostics["status"] = f"EXCEPTION: {str(e)}"
+        diagnostics["status"] = "EXCEPTION"
+        diagnostics["notes"].append(str(e))
         df = pd.DataFrame({"Error": [str(e)]})
-        print("🔥 EXCEPTION THROWN:", str(e))
 
-    print("✅ Returning 3 values from generate_roster()")
     return df, diagnostics, doctor_counts
-
 
 
 
